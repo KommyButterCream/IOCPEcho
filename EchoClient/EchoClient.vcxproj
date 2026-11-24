@@ -162,11 +162,12 @@
       <RuntimeLibrary Condition="'$(Configuration)'=='Release'">MultiThreadedDLL</RuntimeLibrary>
     </ClCompile>
     <Link>
-      <AdditionalLibraryDirectories>$(SolutionDir)..\..\Module\IOCPNetwork\IOCPNetwork\x64\$(Configuration);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(SolutionDir)..\..\Module\IOCPNetwork\x64\$(Configuration);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>IOCPNetwork.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
-      <Command>copy /Y "$(SolutionDir)..\..\Module\IOCPNetwork\IOCPNetwork\x64\$(Configuration)\IOCPNetwork.dll" "$(TargetDir)IOCPNetwork.dll"</Command>
+      <Command>copy /Y "$(SolutionDir)..\..\Module\IOCPNetwork\x64\$(Configuration)\IOCPNetwork.dll" "$(TargetDir)IOCPNetwork.dll"
+copy /Y "$(SolutionDir)..\..\Module\IOCPNetwork\x64\$(Configuration)\IOCPNetwork.pdb" "$(TargetDir)IOCPNetwork.pdb"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
