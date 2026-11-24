@@ -1,0 +1,39 @@
+# Visual Studio 개인 설정 및 캐시
+.vs/
+*.user
+*.suo
+*.VC.db
+*.VC.opendb
+*.VC.VC.opendb
+
+# 빌드 출력 및 중간 디렉터리
+[Bb]uild/
+[Dd]ebug/
+[Rr]elease/
+[Rr]elWithDebInfo/
+[Mm]inSizeRel/
+x64/
+x86/
+Win32/
+ARM/
+ARM64/
+
+# 컴파일·링크 결과와 실행 파일
+*.exe
+*.dll
+*.lib
+*.obj
+*.pch
+*.pdb
+*.idb
+*.ilk
+*.ipch
+*.exp
+*.tlog
+*.lastbuildstate
+*.obj.dt.*
+*.exe.recipe
+*.dll.recipe
+
+# 솔루션에서 제외한 초기 빈 프로젝트의 로컬 잔여 파일
+/IOCPEcho/

@@ -1,0 +1,8 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="EchoClient/EchoClient.vcxproj" Id="873c7c21-66d9-4df5-ab9a-3a84888f7bda" />
+  <Project Path="EchoServer/EchoServer.vcxproj" Id="91c79864-e491-4889-ac6e-2f9bfd14c500" />
+</Solution>
