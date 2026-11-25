@@ -3,20 +3,22 @@
 #include "ClientSession.h"
 #include "IOCPClient.h"
 
-#include <chrono>             // for std::chrono::hours, std::chrono::milliseconds, std::chrono::seconds
+#include <chrono>             // for std::chrono::hours, std::chrono::milliseconds
 #include <condition_variable> // for std::condition_variable
+#include <cstddef>            // for std::size_t
 #include <exception>          // for std::exception
-#include <iostream>           // for std::cout, std::cerr
+#include <iostream>           // for std::cin, std::cout, std::cerr
 #include <mutex>              // for std::mutex, std::lock_guard, std::unique_lock
 #include <span>               // for std::span, std::as_bytes
-#include <string>             // for std::string
+#include <string>             // for std::string, std::to_string, std::getline
 #include <syncstream>         // for std::osyncstream
 #include <utility>            // for std::move
+#include <vector>             // for std::vector
 
 namespace
 {
 	// 중단점에서 오래 대기할 때 활성화하고, 일반 실행 검증 시 false로 바꾼다.
-	constexpr bool EnableDebugTimeouts = true;
+	constexpr bool EnableDebugTimeouts = false;
 	constexpr std::chrono::hours DebugTimeout{ 2 };
 
 	struct ClientState
@@ -28,9 +30,8 @@ namespace
 
 		bool connected = false;
 		bool ended = false;
-		bool responseReceived = false;
 
-		std::string response;
+		std::vector<std::string> responses;
 	};
 
 	bool RegisterCallbacks(IOCPNetwork::IOCPClient& client, ClientState& state)
@@ -116,8 +117,7 @@ namespace
 				{
 					std::lock_guard<std::mutex> lock{ state.mutex };
 
-					state.response = std::move(response);
-					state.responseReceived = true;
+					state.responses.push_back(std::move(response));
 				}
 
 				state.changed.notify_one();
@@ -138,14 +138,20 @@ namespace
 
 	bool ExchangeEcho(IOCPNetwork::IOCPClient& client, ClientState& state)
 	{
+		constexpr std::size_t PacketCount = 10;
+
+		const auto waitTimeout = EnableDebugTimeouts
+			? std::chrono::milliseconds{ DebugTimeout } : std::chrono::milliseconds{ 15'000 };
+
 		IOCPNetwork::ConnectionId connectionId{};
 
+		// 핸드셰이크와 connected 콜백이 끝날 때까지 기다린다.
 		{
 			std::unique_lock<std::mutex> lock{ state.mutex };
 
 			const bool signaled = state.changed.wait_for(
 				lock,
-				EnableDebugTimeouts ? std::chrono::milliseconds{ DebugTimeout } : std::chrono::milliseconds{ 15'000 },
+				waitTimeout,
 				[&state]
 				{
 					return state.connected || state.ended;
@@ -153,77 +159,114 @@ namespace
 
 			if (!signaled || state.ended)
 			{
-				std::osyncstream{ std::cerr } << "Connection was not ready.\n";
+				std::osyncstream{ std::cerr }
+					<< "Connection was not ready.\n";
 
 				return false;
 			}
 
 			connectionId = state.connectionId;
+
+			state.responses.clear();
+			state.responses.reserve(PacketCount);
 		}
 
-		const std::string message = "Hello, IOCP!";
+		// 각 응답을 구별할 수 있도록 서로 다른 본문을 준비한다.
+		std::vector<std::string> messages;
+		messages.reserve(PacketCount);
 
-		const auto payload = std::as_bytes(std::span<const char>{message.data(), message.size()});
-
-		auto packetResult = client.CreatePacket(IOCPEcho::EchoPacketId, payload);
-
-		if (!packetResult)
+		for (std::size_t index = 0; index < PacketCount; ++index)
 		{
-			std::osyncstream{ std::cerr }
-				<< "Failed to create packet. error="
-				<< static_cast<int>(packetResult.error)
-				<< '\n';
-
-			return false;
+			messages.push_back("Echo #" + std::to_string(index + 1) + ": Hello, IOCP!");
 		}
 
-		const auto sendResult = client.Send(connectionId, std::move(packetResult.packet));
-
-		if (sendResult != IOCPNetwork::SendResult::Queued)
+		// 개별 응답을 기다리지 않고 모든 패킷을 순서대로 송신 접수한다.
+		for (std::size_t index = 0; index < messages.size(); ++index)
 		{
-			std::osyncstream{ std::cerr }
-				<< "Send rejected. result="
-				<< static_cast<int>(sendResult)
-				<< '\n';
+			const auto& message = messages[index];
 
-			return false;
+			const auto payload = std::as_bytes(
+				std::span<const char>{ message.data(), message.size() });
+
+			auto packetResult = client.CreatePacket(IOCPEcho::EchoPacketId, payload);
+
+			if (!packetResult)
+			{
+				std::osyncstream{ std::cerr }
+					<< "Failed to create packet. sequence=" << index + 1
+					<< ", error=" << static_cast<int>(packetResult.error)
+					<< '\n';
+
+				return false;
+			}
+
+			const auto sendResult = client.Send(connectionId, std::move(packetResult.packet));
+
+			if (sendResult != IOCPNetwork::SendResult::Queued)
+			{
+				std::osyncstream{ std::cerr }
+					<< "Send rejected. sequence=" << index + 1
+					<< ", result=" << static_cast<int>(sendResult)
+					<< '\n';
+
+				return false;
+			}
+
+			std::osyncstream{ std::cout }
+				<< "[Send queued] " << message << '\n';
 		}
 
-		std::osyncstream{ std::cout } << "[Send queued] " << message << '\n';
+		std::vector<std::string> responses;
 
-		std::string response;
-
+		// 응답 수가 목표에 도달하거나 연결이 종료될 때까지 기다린다.
 		{
 			std::unique_lock<std::mutex> lock{ state.mutex };
 
 			const bool signaled = state.changed.wait_for(
 				lock,
-				EnableDebugTimeouts ? std::chrono::milliseconds{ DebugTimeout } : std::chrono::milliseconds{ 15'000 },
-				[&state]
+				waitTimeout,
+				[&state, &messages]
 				{
-					return state.responseReceived || state.ended;
+					return state.responses.size() >= messages.size() || state.ended;
 				});
 
-			if (!signaled || !state.responseReceived)
+			if (!signaled || state.responses.size() != messages.size())
 			{
-				std::osyncstream{ std::cerr } << "Echo response was not received.\n";
+				std::osyncstream{ std::cerr }
+					<< "Unexpected echo response count. expected="
+					<< messages.size()
+					<< ", actual=" << state.responses.size()
+					<< ", connectionEnded=" << state.ended
+					<< '\n';
 
 				return false;
 			}
 
-			response = state.response;
+			// 공유 상태를 잠근 상태에서 복사하고, 비교는 락 밖에서 수행한다.
+			responses = state.responses;
 		}
 
-		std::osyncstream{ std::cout } << "[Echo received] " << response << '\n';
-
-		if (response != message)
+		for (std::size_t index = 0; index < messages.size(); ++index)
 		{
-			std::osyncstream{ std::cerr } << "Echo response mismatch.\n";
+			if (responses[index] != messages[index])
+			{
+				std::osyncstream{ std::cerr }
+					<< "Echo content or order mismatch. sequence="
+					<< index + 1
+					<< "\n  expected: " << messages[index]
+					<< "\n  actual:   " << responses[index]
+					<< '\n';
 
-			return false;
+				return false;
+			}
+
+			std::osyncstream{ std::cout } << "[Echo verified] " << responses[index] << '\n';
 		}
 
-		std::osyncstream{ std::cout } << "Echo verification passed.\n";
+		std::osyncstream{ std::cout }
+			<< "Echo verification passed: "
+			<< responses.size()
+			<< " packets, matching content and order.\n";
 
 		return true;
 	}
@@ -268,6 +311,16 @@ namespace
 		}
 
 		const bool succeeded = ExchangeEcho(client, state);
+
+		if (succeeded)
+		{
+			std::osyncstream{ std::cout }
+				<< "Echo verification completed.\n"
+				<< "Press Enter to disconnect and stop EchoClient.\n";
+
+			std::string input;
+			std::getline(std::cin, input);
+		}
 
 		std::osyncstream{ std::cout } << "Stopping EchoClient...\n";
 

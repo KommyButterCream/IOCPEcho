@@ -14,7 +14,7 @@
 namespace
 {
 	// 중단점에서 오래 대기할 때 활성화하고, 일반 실행 검증 시 false로 바꾼다.
-	constexpr bool EnableDebugTimeouts = true;
+	constexpr bool EnableDebugTimeouts = false;
 	constexpr std::chrono::hours DebugTimeout{ 1 };
 
 	void OnConnected(IOCPNetwork::ClientSession& session)
