@@ -3,6 +3,7 @@
 #include "ClientSession.h"
 #include "IOCPServer.h"
 
+#include <chrono>    // for std::chrono::hours
 #include <cstddef>   // for std::size_t
 #include <exception> // for std::exception
 #include <iostream>  // for std::cin, std::cout, std::cerr
@@ -12,6 +13,10 @@
 
 namespace
 {
+	// 중단점에서 오래 대기할 때 활성화하고, 일반 실행 검증 시 false로 바꾼다.
+	constexpr bool EnableDebugTimeouts = true;
+	constexpr std::chrono::hours DebugTimeout{ 1 };
+
 	void OnConnected(IOCPNetwork::ClientSession& session)
 	{
 		const auto id = session.GetConnectionId();
@@ -94,6 +99,15 @@ namespace
 		options.network.ioWorkerCount = 2;
 		options.network.jobWorkerCount = 2;
 		options.network.maxPacketPoolBytes = 16 * 1024 * 1024;
+
+		if (EnableDebugTimeouts)
+		{
+			options.network.handshakeTimeout = DebugTimeout;
+			options.network.heartbeatTimeout = DebugTimeout;
+			options.network.receiveTimeout = DebugTimeout * 2;
+			options.network.backpressureTimeout = DebugTimeout;
+			options.network.shutdownTimeout = DebugTimeout;
+		}
 
 		const auto startResult = server.Start(options);
 

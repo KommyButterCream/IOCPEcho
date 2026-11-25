@@ -3,7 +3,7 @@
 #include "ClientSession.h"
 #include "IOCPClient.h"
 
-#include <chrono>             // for std::chrono::seconds
+#include <chrono>             // for std::chrono::hours, std::chrono::milliseconds, std::chrono::seconds
 #include <condition_variable> // for std::condition_variable
 #include <exception>          // for std::exception
 #include <iostream>           // for std::cout, std::cerr
@@ -15,6 +15,10 @@
 
 namespace
 {
+	// 중단점에서 오래 대기할 때 활성화하고, 일반 실행 검증 시 false로 바꾼다.
+	constexpr bool EnableDebugTimeouts = true;
+	constexpr std::chrono::hours DebugTimeout{ 2 };
+
 	struct ClientState
 	{
 		std::mutex mutex;
@@ -141,7 +145,7 @@ namespace
 
 			const bool signaled = state.changed.wait_for(
 				lock,
-				std::chrono::seconds{ 15 },
+				EnableDebugTimeouts ? std::chrono::milliseconds{ DebugTimeout } : std::chrono::milliseconds{ 15'000 },
 				[&state]
 				{
 					return state.connected || state.ended;
@@ -194,7 +198,7 @@ namespace
 
 			const bool signaled = state.changed.wait_for(
 				lock,
-				std::chrono::seconds{ 15 },
+				EnableDebugTimeouts ? std::chrono::milliseconds{ DebugTimeout } : std::chrono::milliseconds{ 15'000 },
 				[&state]
 				{
 					return state.responseReceived || state.ended;
@@ -240,6 +244,15 @@ namespace
 		options.network.ioWorkerCount = 2;
 		options.network.jobWorkerCount = 2;
 		options.network.maxPacketPoolBytes = 16 * 1024 * 1024;
+
+		if (EnableDebugTimeouts)
+		{
+			options.network.handshakeTimeout = DebugTimeout;
+			options.network.heartbeatTimeout = DebugTimeout;
+			options.network.receiveTimeout = DebugTimeout * 2;
+			options.network.backpressureTimeout = DebugTimeout;
+			options.network.shutdownTimeout = DebugTimeout;
+		}
 
 		const auto startResult = client.Start(options);
 
